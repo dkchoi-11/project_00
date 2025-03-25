@@ -702,7 +702,7 @@ def defect_tracking_page():
             yaxis=dict(title="불량건수"),
             yaxis2=dict(
                 title="누적비율(%)",
-                titlefont=dict(color="red"),
+                font=dict(color="red"),
                 tickfont=dict(color="red"),
                 overlaying="y",
                 side="right",
