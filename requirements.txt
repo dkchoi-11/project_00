@@ -1,0 +1,4 @@
+streamlit
+plotly
+pandas
+# 필요한 다른 패키지도 여기에 적기
