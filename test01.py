@@ -88,3 +88,8 @@ def process_excel_and_save(input_path, output_path, sheet_name='SUB', save_sheet
         ws_new.append([row.Date, row.관리항목명, row.측정값])
     wb.save(output_path)
     print(f"✅ 변환 완료: {output_path}")
+
+process_excel_and_save(
+    input_path="test00.xlsx",
+    output_path="test00_변환완료_함수버전.xlsx"
+)
