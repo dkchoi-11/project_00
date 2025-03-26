@@ -1,4 +1,10 @@
 import pandas as pd
+import logging
+from typing import Optional, List, Dict, Union
+from openpyxl import load_workbook
+from datetime import datetime
+
+import pandas as pd
 from typing import Optional, List, Dict, Union
 from openpyxl import load_workbook
 from datetime import datetime
@@ -170,37 +176,3 @@ def transform_data(
 
     df_result_sorted = df_result.sort_values(by=["측정일자", "CTQ/P 관리항목명"]).reset_index(drop=True)
     return df_result_sorted
-
-# 결과 저장 함수
-def save_to_excel(df: pd.DataFrame, output_path: str, sheet_name: str = '변환') -> None:
-    columns = df.columns.tolist()
-    if "관리번호" in columns:
-        columns.remove("관리번호")
-        columns = ["관리번호"] + columns
-        df = df[columns]
-
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-# 메인 실행 함수
-def main():
-    try:
-        start = input("시작 날짜를 입력하세요 (예: 2024-01-06): ")
-        end = input("종료 날짜를 입력하세요 (예: 2024-01-15): ")
-
-        result_df = transform_data(
-            input_path="test00.xlsx",
-            master_path="LGE_Master_희성_뉴옵.xlsx",
-            start_date=start,
-            end_date=end
-        )
-
-        save_to_excel(result_df, output_path="test00_변환완료_함수버전.xlsx", sheet_name="변환")
-
-    except KeyboardInterrupt:
-        print("작업이 사용자에 의해 중단되었습니다.")
-    except Exception as e:
-        print(f"예기치 않은 오류 발생: {e}")
-
-if __name__ == "__main__":
-    main()
