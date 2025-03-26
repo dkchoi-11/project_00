@@ -138,6 +138,12 @@ def add_management_code(results_df: pd.DataFrame, master_key_df: pd.DataFrame) -
 
     merged_df = pd.merge(results_df, master_key_df_renamed, on=merge_keys, how='left')
 
+    # 관리번호를 첫 번째 열로 이동
+    if "관리번호" in merged_df.columns:
+        cols = merged_df.columns.tolist()
+        cols.remove("관리번호")
+        merged_df = merged_df[["관리번호"] + cols]
+
     return merged_df
 
 # 전체 프로세스를 실행하는 함수

@@ -1,45 +1,36 @@
+import streamlit as st
 import pandas as pd
-from openpyxl import load_workbook
+from typing import Optional, List, Dict, Union
 from datetime import datetime
+from io import BytesIO
 
-def find_date_start_col(df, sample_row_count=10):
-    """
-    상위 sample_row_count개의 행을 기준으로 날짜로 변환 가능한 값이 가장 많이 나오는 열을 찾음
-    """
-    def is_date(x):
+# 날짜 형식이 가장 많이 들어있는 열의 인덱스를 찾는 함수
+def find_date_start_col(df: pd.DataFrame, sample_row_count: int = 10) -> int:
+    def is_date(x: Union[str, datetime]) -> bool:
         try:
             pd.to_datetime(x)
             return True
         except:
             return False
 
-    max_count = 0
-    best_col = None
+    date_counts = [
+        sum(df.iloc[:sample_row_count, col_idx].apply(is_date))
+        for col_idx in range(df.shape[1])
+    ]
+    best_col = date_counts.index(max(date_counts))
 
-    for col_idx in range(df.shape[1]):
-        col_data = df.iloc[:sample_row_count, col_idx]
-        count = sum(col_data.apply(is_date))
-        if count > max_count:
-            max_count = count
-            best_col = col_idx
-
-    if best_col is None:
-        raise ValueError("날짜가 포함된 열을 찾을 수 없습니다.")
+    if date_counts[best_col] == 0:
+        raise ValueError("No date column found")
 
     return best_col
 
-# 날짜행 탐지 함수
-def find_date_row(df, date_start_col=None, min_date_count=1, max_row_check=20):
-    """
-    DataFrame에서 날짜가 포함된 첫 번째 행(index)을 찾습니다.
-    - date_start_col: 날짜가 시작될 것으로 예상되는 열 번호. None이면 자동 탐지
-    - min_date_count: 날짜처럼 인식되는 값이 이 개수 이상이면 날짜 행으로 판단
-    - max_row_check: 상위 몇 개 행만 검사할지
-    """
+# 날짜가 포함된 첫 번째 행의 인덱스를 찾는 함수
+def find_date_row(df: pd.DataFrame, date_start_col: Optional[int] = None,
+                  min_date_count: int = 1, max_row_check: int = 20) -> int:
     if date_start_col is None:
         date_start_col = find_date_start_col(df)
 
-    def is_date(x):
+    def is_date(x: Union[str, datetime, pd.Timestamp]) -> bool:
         if isinstance(x, (pd.Timestamp, datetime)):
             return True
         if isinstance(x, str):
@@ -54,10 +45,12 @@ def find_date_row(df, date_start_col=None, min_date_count=1, max_row_check=20):
         row = df.iloc[i, date_start_col:]
         if row.apply(is_date).sum() >= min_date_count:
             return i
-    raise ValueError("날짜가 포함된 행을 찾을 수 없습니다.")
 
-# 날짜 열 인덱스 → 날짜 매핑
-def get_date_mapping(df, date_row_index, date_start_col=None):
+    raise ValueError("No date row found")
+
+# 날짜가 들어 있는 셀들의 열 인덱스를 실제 날짜 값과 매핑하는 함수
+def get_date_mapping(df: pd.DataFrame, date_row_index: int,
+                     date_start_col: Optional[int] = None) -> Dict[int, pd.Timestamp]:
     if date_start_col is None:
         date_start_col = find_date_start_col(df)
 
@@ -68,27 +61,35 @@ def get_date_mapping(df, date_row_index, date_start_col=None):
     for col_idx, date in zip(range(date_start_col, len(df.columns)), dates):
         if pd.notna(date):
             mapping[col_idx] = date
+
     return mapping
 
-# CTQ별 측정값 추출
-def extract_measurement_data(df, date_mapping, date_row_index, search_cols=range(0, 11)):
+# 측정 데이터를 추출하는 함수
+def extract_measurement_data(
+        df: pd.DataFrame,
+        info_dict: Dict[str, str],
+        date_mapping: Dict[int, pd.Timestamp],
+        date_row_index: int,
+        search_cols: List[int] = list(range(0, 11))
+) -> pd.DataFrame:
     results = []
+    search_cols = [col for col in search_cols if col < df.shape[1]]
 
-    # 측정POINT 위치 수집
     point_indices = []
     for i in range(date_row_index, len(df)):
         for col in search_cols:
+            if col >= df.shape[1]:
+                continue
             cell_value = df.iloc[i, col]
             if str(cell_value).strip() == '측정POINT':
-                ctq_col = col + 1  # CTQ명은 측정POINT 바로 오른쪽 열에 있음
-                ctq_name = df.iloc[i, ctq_col] if ctq_col < df.shape[1] else None
-                if pd.notna(ctq_name):
-                    point_indices.append((i, ctq_name))
-                break  # 찾았으면 다음 행으로
+                ctq_col = col + 1
+                if ctq_col < df.shape[1]:
+                    ctq_name = df.iloc[i, ctq_col]
+                    if pd.notna(ctq_name):
+                        point_indices.append((i, ctq_name))
+                break
 
-    # CTQ 구간별 측정값 수집
     for idx, (start_idx, ctq_name) in enumerate(point_indices):
-        # 다음 CTQ까지 or 마지막 유효 행까지
         if idx + 1 < len(point_indices):
             end_idx = point_indices[idx + 1][0]
         else:
@@ -99,55 +100,114 @@ def extract_measurement_data(df, date_mapping, date_row_index, search_cols=range
                 else:
                     break
 
-        # start_idx 부터 포함
         for i in range(start_idx, end_idx):
             for col in date_mapping:
-                value = df.iloc[i, col]
-                if pd.notna(value):
-                    results.append({
-                        'Date': date_mapping[col],
-                        '관리항목명': ctq_name,
-                        '측정값': value
-                    })
+                if col < df.shape[1] and i < df.shape[0]:
+                    value = df.iloc[i, col]
+                    if pd.notna(value):
+                        results.append({
+                            '1차 업체명': str(info_dict.get("1차 업체명", "")).strip(),
+                            '지역명': str(info_dict.get("지역명", "")).strip(),
+                            '2차업체명': str(info_dict.get("2차업체명", "")).strip(),
+                            '모델명': str(info_dict.get("모델명", "")).strip(),
+                            '측정자': str(info_dict.get("측정자", "")).strip(),
+                            '측정장비': str(info_dict.get("측정장비", "")).strip(),
+                            '부품명': str(info_dict.get("부품명", "")).strip(),
+                            'CTQ/P 관리항목명': str(ctq_name).strip(),
+                            '측정일자': date_mapping[col],
+                            '측정값': value,
+                            'Part No': str(info_dict.get("Part No", "")).strip()
+                        })
 
     return pd.DataFrame(results)
 
+# 관리번호를 매핑하는 함수
+def add_management_code(results_df: pd.DataFrame, master_key_df: pd.DataFrame) -> pd.DataFrame:
+    merge_keys = ["1차 업체명", "지역명", "2차업체명", "모델명", "부품명", "CTQ/P 관리항목명"]
 
-# 전체 실행 함수
-def process_excel_and_save(input_path, output_path, sheet_name='SUB', save_sheet='변환',
-                           start_date=None, end_date=None):
-    df = pd.read_excel(input_path, sheet_name=sheet_name, header=None)
+    master_key_df_renamed = master_key_df.rename(columns={
+        "부품": "부품명",
+        "공정CTQ/CTP 관리 항목명": "CTQ/P 관리항목명",
+        "2차 업체명": "2차업체명"
+    })
+
+    master_key_df_renamed = master_key_df_renamed.loc[:, ["관리번호"] + merge_keys]
+
+    for key in merge_keys:
+        results_df[key] = results_df[key].astype(str).str.strip()
+        master_key_df_renamed[key] = master_key_df_renamed[key].astype(str).str.strip()
+
+    merged_df = pd.merge(results_df, master_key_df_renamed, on=merge_keys, how='left')
+
+    # 관리번호를 첫 번째 열로 이동
+    if "관리번호" in merged_df.columns:
+        cols = merged_df.columns.tolist()
+        cols.remove("관리번호")
+        merged_df = merged_df[["관리번호"] + cols]
+
+    return merged_df
+
+# 전체 프로세스를 실행하는 함수
+def transform_data(
+        input_file: BytesIO,
+        master_file: BytesIO,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        search_cols: List[int] = list(range(0, 11))
+) -> pd.DataFrame:
+    info_df = pd.read_excel(input_file, sheet_name="Information")
+    info_dict = info_df.set_index("Contents")['Value'].to_dict()
+
+    df = pd.read_excel(input_file, sheet_name=info_dict["Data_sheet"], header=None)
+    master_df = pd.read_excel(master_file, sheet_name="Master")
+
     date_row_idx = find_date_row(df)
     date_map = get_date_mapping(df, date_row_idx)
-    df_result = extract_measurement_data(df, date_map, date_row_idx)
 
-    # 날짜 필터 적용 (사용자가 입력한 경우에만)
+    df_result = extract_measurement_data(df, info_dict, date_map, date_row_idx, search_cols)
+    df_result = add_management_code(df_result, master_df)
+
     if start_date and end_date:
         start_date = pd.to_datetime(start_date)
         end_date = pd.to_datetime(end_date)
-        df_result = df_result[(df_result["Date"] >= start_date) & (df_result["Date"] <= end_date)]
+        df_result = df_result[
+            (df_result["측정일자"] >= start_date) &
+            (df_result["측정일자"] <= end_date)
+        ]
 
-    # 정렬
-    df_result_sorted = df_result.sort_values(by=["Date", "관리항목명"]).reset_index(drop=True)
+    df_result_sorted = df_result.sort_values(by=["측정일자", "CTQ/P 관리항목명"]).reset_index(drop=True)
+    return df_result_sorted
 
-    # 저장
-    wb = load_workbook(input_path)
-    if save_sheet in wb.sheetnames:
-        del wb[save_sheet]
-    ws_new = wb.create_sheet(save_sheet)
-    ws_new.append(["Date", "관리항목명", "측정값"])
-    for row in df_result_sorted.itertuples(index=False):
-        ws_new.append([row.Date, row.관리항목명, row.측정값])
-    wb.save(output_path)
-    print(f"✅ 변환 완료: {output_path}")
+# Streamlit 앱 실행
+st.title("측정값 변환 도구")
 
-# 사용자에게 날짜 입력 받기
-start = input("시작 날짜를 입력하세요 (예: 2024-01-06): ")
-end = input("종료 날짜를 입력하세요 (예: 2024-01-15): ")
+input_file = st.file_uploader("📄 측정값 Excel 파일 업로드", type=["xlsx"])
+master_file = st.file_uploader("📄 마스터 키 Excel 파일 업로드", type=["xlsx"])
+start_date = st.date_input("시작 날짜", value=None)
+end_date = st.date_input("종료 날짜", value=None)
 
-process_excel_and_save(
-    input_path="test00.xlsx",
-    output_path="test00_변환완료_함수버전.xlsx",
-    start_date=start,
-    end_date=end
-)
+if input_file and master_file and start_date and end_date:
+    try:
+        df_result = transform_data(
+            input_file=input_file,
+            master_file=master_file,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        st.success("✅ 변환 완료!")
+        st.dataframe(df_result)
+
+        towrite = BytesIO()
+        with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
+            df_result.to_excel(writer, index=False, sheet_name="변환")
+        towrite.seek(0)
+
+        st.download_button(
+            label="📥 결과 다운로드",
+            data=towrite,
+            file_name="변환결과.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        st.error(f"❌ 오류 발생: {e}")
