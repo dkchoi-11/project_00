@@ -60,7 +60,6 @@ def find_date_row(df, date_start_col=None, min_date_count=1, max_row_check=20):
 def get_date_mapping(df, date_row_index, date_start_col=None):
     if date_start_col is None:
         date_start_col = find_date_start_col(df)
-        print(date_start_col)
 
     date_row = df.iloc[date_row_index, date_start_col:]
     dates = pd.to_datetime(date_row, errors='coerce')
@@ -115,11 +114,18 @@ def extract_measurement_data(df, date_mapping, date_row_index, search_cols=range
 
 
 # 전체 실행 함수
-def process_excel_and_save(input_path, output_path, sheet_name='SUB', save_sheet='변환'):
+def process_excel_and_save(input_path, output_path, sheet_name='SUB', save_sheet='변환',
+                           start_date=None, end_date=None):
     df = pd.read_excel(input_path, sheet_name=sheet_name, header=None)
     date_row_idx = find_date_row(df)
     date_map = get_date_mapping(df, date_row_idx)
     df_result = extract_measurement_data(df, date_map, date_row_idx)
+
+    # 날짜 필터 적용 (사용자가 입력한 경우에만)
+    if start_date and end_date:
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+        df_result = df_result[(df_result["Date"] >= start_date) & (df_result["Date"] <= end_date)]
 
     # 정렬
     df_result_sorted = df_result.sort_values(by=["Date", "관리항목명"]).reset_index(drop=True)
@@ -135,7 +141,13 @@ def process_excel_and_save(input_path, output_path, sheet_name='SUB', save_sheet
     wb.save(output_path)
     print(f"✅ 변환 완료: {output_path}")
 
+# 사용자에게 날짜 입력 받기
+start = input("시작 날짜를 입력하세요 (예: 2024-01-06): ")
+end = input("종료 날짜를 입력하세요 (예: 2024-01-15): ")
+
 process_excel_and_save(
     input_path="test00.xlsx",
-    output_path="test00_변환완료_함수버전.xlsx"
+    output_path="test00_변환완료_함수버전.xlsx",
+    start_date=start,
+    end_date=end
 )
