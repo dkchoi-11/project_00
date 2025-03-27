@@ -1,3 +1,7 @@
+'''
+test02을 streamlit으로 변환한 것.
+'''
+
 import streamlit as st
 import pandas as pd
 from typing import Optional, List, Dict, Union

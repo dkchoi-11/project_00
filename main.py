@@ -14,7 +14,7 @@ def main():
             end_date=end
         )
 
-        save_to_excel(result_df, output_path="test00_변환완료_함수버전.xlsx", sheet_name="변환")
+        save_to_excel(result_df)
 
     except KeyboardInterrupt:
         print("작업이 사용자에 의해 중단되었습니다.")

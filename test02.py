@@ -1,3 +1,7 @@
+'''
+2025/03/27
+엑셀에서 데이타를 특정 양식으로 변환하는 코드
+'''
 import pandas as pd
 from typing import Optional, List, Dict, Union
 from openpyxl import load_workbook
@@ -177,16 +181,33 @@ def transform_data(
     df_result_sorted = df_result.sort_values(by=["측정일자", "CTQ/P 관리항목명"]).reset_index(drop=True)
     return df_result_sorted
 
-# 결과 저장 함수
-def save_to_excel(df: pd.DataFrame, output_path: str, sheet_name: str = '변환') -> None:
-    columns = df.columns.tolist()
-    if "관리번호" in columns:
-        columns.remove("관리번호")
-        columns = ["관리번호"] + columns
-        df = df[columns]
+# 문자열 변환용 함수
+def clean_string(s):
+    return str(s).strip().replace("/", "-")
 
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
+# 결과 저장 함수
+def save_to_excel(df: pd.DataFrame) -> None:
+
+    # 중복 제거 후 고유값 추출
+    first_company = clean_string(df['1차 업체명'].unique()[0])
+    region = clean_string(df['지역명'].unique()[0])
+    second_company = clean_string(df['2차업체명'].unique()[0])
+    model = clean_string(df['모델명'].unique()[0])
+    part_name = clean_string(df['부품명'].unique()[0])
+
+    # 날짜 형식 변환 및 정렬
+    df["측정일자"] = pd.to_datetime(df["측정일자"])
+    start_date = df["측정일자"].min().strftime("%Y%m%d")
+    end_date = df["측정일자"].max().strftime("%Y%m%d")
+
+    # 파일명 생성
+    filename = f"CTQ_{first_company}_{region}_{second_company}_{model}_{part_name}_{start_date}_{end_date}.xlsx"
+
+    # 엑셀 저장 (시트 이름 toLGE)
+    with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='toLGE', index=False)
+
+    print(f"파일이 저장되었습니다: {filename}")
 
 # 메인 실행 함수
 def main():
@@ -201,7 +222,7 @@ def main():
             end_date=end
         )
 
-        save_to_excel(result_df, output_path="test00_변환완료_함수버전.xlsx", sheet_name="변환")
+        save_to_excel(result_df)
 
     except KeyboardInterrupt:
         print("작업이 사용자에 의해 중단되었습니다.")
